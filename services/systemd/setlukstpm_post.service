@@ -1,9 +1,0 @@
-[Unit]
-Description=Set TPM2 PCRs to default values after firmware/bootloader upgrades
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/setlukstpm -vnad
-
-[Install]
-WantedBy=multi-user.target

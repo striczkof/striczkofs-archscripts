@@ -1,7 +1,0 @@
-[Unit]
-Description=Set TPM2 PCRs to minimum values to allow firmware/bootloader upgrades
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/setlukstpm -vnse
-TimeoutSec=300s
