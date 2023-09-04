@@ -1,0 +1,10 @@
+[Unit]
+Description=UKI/Firmware update detected
+
+[Path]
+PathChanged=/efi/EFI/Arch/fw
+PathChanged=/efi/EFI/Arch/arch-linux.efi
+Unit=setlukstpm_pre.service
+
+[Install]
+WantedBy=multi-user.target
