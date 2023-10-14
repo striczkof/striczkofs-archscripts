@@ -1,0 +1,98 @@
+#!/bin/sh
+
+# Arg 1: warning message printed to stderr
+warn() {
+  >&2 echo "${NAME}: ${1}"
+}
+
+# Arg 1: error message, opt arg 2: exit code
+panic() {
+  warn "${1}"
+  exit "${2:-1}"
+}
+
+# Dependency check
+{
+  command -v cat || panic "Why don't you have coreutils installed?" 2
+  command -v id || panic "Why don't you have coreutils installed?" 2
+  command -v cctk || panic "Dell Command | Configure not found. It is available in the AUR as 'dell-command-configure'" 2
+} 1>/dev/null
+
+# Temporary. Change to M4 macro later.
+CONFIG_FILE="/etc/limitcharge.conf"
+
+# Set HOME to the user's home directory if sudo'ed. This is useful if one puts $HOME in their password file path.
+[ -n "${SUDO_USER}" ] && HOME="$(eval echo ~"${SUDO_USER}")"
+[ -n "${DOAS_USER}" ] && HOME="$(eval echo ~"${DOAS_USER}")"
+
+# expected vars: CHARGE_MIN, CHARGE_MAX, DELL_ADMIN_PWD_FILE
+# shellcheck source=../configs/limitcharge/limitcharge.conf
+. $CONFIG_FILE || panic "$CONFIG_FILE: No such file or directory" 2
+#dell_admin_pwd_file="/home/striczkof/.local/etc/secrets/dell-admin.pwd"
+#charge_limit="55-60"
+
+NAME="$0"
+
+main() {
+  case "$@" in
+    'on')
+      do_check_valid_charge_limit
+      dell_cmd --PrimaryBattChargeCfg=Custom:"${CHARGE_MIN}-${CHARGE_MAX}"
+      ;;
+    'off')
+      dell_cmd --PrimaryBattChargeCfg=Standard
+      ;;
+    'passwd')
+      [ -n "${DELL_ADMIN_PWD_FILE}" ] || panic "DELL_ADMIN_PWD_FILE is not set. Please set it in '${CONFIG_FILE}'."
+      echo "This will be written to the $DELL_ADMIN_PWD_FILE"
+      printf 'Enter new Dell administrator password: '
+      stty -echo
+      read -r password
+      stty echo
+      echo
+      if [ -n "${password}" ]
+      then
+        echo "${password}" > "${DELL_ADMIN_PWD_FILE}" || panic "Failed to write to ${DELL_ADMIN_PWD_FILE}."
+      else
+        rm -f "${DELL_ADMIN_PWD_FILE}"
+      fi
+      ;;
+    *)
+      echo "Invalid usage."
+      echo "Usage: ${0} on|off|passwd"
+      exit 1
+      ;;
+  esac
+}
+
+# Runs the Command Configure with or without the password file.
+dell_cmd() {
+  do_checks
+  if [ -n "${DELL_ADMIN_PWD_FILE}" ] && [ -e "${DELL_ADMIN_PWD_FILE}" ]
+  then
+    cctk --ValSetupPwd="$(cat "${DELL_ADMIN_PWD_FILE}")" "$@" 1>/dev/null || panic "Failed to run Dell Command | Configure." 150
+  else
+    cctk "$@" 1>/dev/null || panic "Failed to run Dell Command | Configure." 150
+  fi
+}
+
+do_checks() {
+  [ "$(id -u)" -eq 0 ] || panic "Not running as root." 13
+}
+
+# Check whether the minimum and maximum charge limits are valid. From Dell Command Configure documentation table 337:
+# NOTE: The format to set custom option is custom:start value-stop value. The
+# start value range must be 50–95 percentage and the stop value range must be 55–100
+# percentage. The difference between the start and stop values must be greater than or
+# equal to 5.
+do_check_valid_charge_limit() {
+  [ "$CHARGE_MIN" -ge 50 ] || panic "Minimum charge limit must be set to at least 50."
+  [ "$CHARGE_MIN" -le 95 ] || panic "Minimum charge limit must be set to at most 95."
+  [ "$CHARGE_MAX" -ge 55 ] || panic "Maximum charge limit must be set to at least 55."
+  [ "$CHARGE_MAX" -le 100 ] || panic "Maximum charge limit must be set to at most 100."
+  [ "$CHARGE_MAX" -ge $((CHARGE_MIN + 5)) ] || panic "Maximum charge must be greater than or equal to $((CHARGE_MIN - 5))."
+}
+
+# Start main logic
+main "$@"
+
